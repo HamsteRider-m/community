@@ -1,0 +1,9 @@
+{
+  "name": "nowledge-mem",
+  "description": "Personal knowledge graph for GenericAgent with layered read, entity tracking, space management, auto-recall, and session sync.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Nowledge Labs",
+    "email": "hello@nowledge-labs.ai"
+  }
+}
