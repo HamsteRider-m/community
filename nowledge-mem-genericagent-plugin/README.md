@@ -1,6 +1,25 @@
 # Nowledge Mem for GenericAgent
 
-Personal knowledge graph integration for [GenericAgent](https://github.com/yourusername/GenericAgent) with layered read, entity tracking, space management, auto-recall, and session sync.
+Personal knowledge graph integration for [GenericAgent](https://github.com/lsdefine/GenericAgent) with layered read, entity tracking, space management, auto-recall, and session sync.
+
+## ⚠️ GenericAgent-Specific Implementation
+
+**This plugin uses GenericAgent's Python code injection mechanism, not JSON configuration hooks.**
+
+Unlike other plugins in this repository (e.g., Droid, Copilot CLI) that use `hooks.json`:
+- ❌ **Does NOT use** `hooks.json` (GenericAgent doesn't support JSON hook configs)
+- ✅ **Uses** Python `install()` method in `.omx/ga_nmem_hook/run_agentmain.py`
+
+**Hook mechanism**:
+```python
+# .omx/ga_nmem_hook/run_agentmain.py
+import nmem_session_sync
+nmem_session_sync.install(agentmain.GeneraticAgent)  # Direct class injection
+```
+
+For details, see [hooks/README.md](hooks/README.md).
+
+**Reference**: [GenericAgent Documentation](https://datawhalechina.github.io/hello-generic-agent/)
 
 ## Features
 
