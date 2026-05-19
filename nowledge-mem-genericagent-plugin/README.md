@@ -14,6 +14,7 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
 
 - **Zero Source Code Modification**: Uses Python monkey patching to wrap `get_system_prompt()`
 - **Automatic Working Memory Injection**: Loads nmem working memory at session start
+- **Session Save**: Automatically saves GenericAgent conversations to nmem
 - **Hybrid-Aware Operating Model**: Adapts to GenericAgent's autonomous + user-driven workflow
 - **Graceful Degradation**: Falls back to plain text if JSON parsing fails
 - **100% Test Coverage**: Comprehensive unit, integration, and end-to-end tests
@@ -47,6 +48,7 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
 
 ### Components
 
+**AutoRecall (Working Memory Injection)**
 - **`genericagent_nmem.py`**: Core plugin (84 lines)
   - `install()`: Monkey patches `agentmain.get_system_prompt()`
   - `build_prompt_block()`: Constructs nmem context block
@@ -57,6 +59,22 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
   - Imports and installs the plugin before launching GenericAgent
   - Usage: `python wrapper.py` (instead of `ga`)
 
+**Session Save (Conversation Archiving)**
+- **`src/session_save.py`**: Core session save module
+  - `SessionParser`: Parses `model_responses_*.txt` log files
+  - `NmemClient`: Direct HTTP API client (bypasses CLI limitations)
+  - Handles GenericAgent's unique log format (Prompt/Response sections)
+
+- **`src/session_save_cli.py`**: Manual session save tool
+  - Save specific log files: `python session_save_cli.py /path/to/log.txt`
+  - Batch save all logs: `python session_save_cli.py --all`
+
+- **`src/session_watcher.py`**: Automatic monitoring service
+  - Watches `temp/model_responses/` for new/modified logs
+  - Auto-saves completed sessions to nmem
+  - Run as background service: `python session_watcher.py`
+
+**Documentation**
 - **`AGENTS.md`**: Operating model documentation (236 lines)
   - When to read/search/distill/save
   - GenericAgent-specific adaptation guidelines
@@ -144,11 +162,44 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
    - "Based on the working memory, Task A is blocked on X..."
    - "I see from the distilled notes that we tried approach Y before..."
 
-4. **Save session summary** (manual or automatic):
+4. **Session Save** — Archive conversations to nmem:
+
+   **Manual Save (via export_handoff)**:
    ```python
    # In GenericAgent code or user command:
    from genericagent_nmem import export_handoff
    export_handoff("Completed feature X, next: test Y")
+   ```
+
+   **CLI Tool (save specific sessions)**:
+   ```bash
+   # Save a specific log file
+   cd /path/to/nowledge-mem-genericagent-plugin
+   python src/session_save_cli.py /path/to/GenericAgent/temp/model_responses/model_responses_887760.txt
+   
+   # Batch save all log files
+   python src/session_save_cli.py --all
+   ```
+
+   **Automatic Monitoring (background service)**:
+   ```bash
+   # Start the watcher service
+   cd /path/to/nowledge-mem-genericagent-plugin
+   python src/session_watcher.py
+   
+   # The service will:
+   # - Monitor temp/model_responses/ for new/modified logs
+   # - Auto-save completed sessions to nmem
+   # - Run continuously in the background
+   ```
+
+   **Verify saved sessions**:
+   ```bash
+   # List all threads
+   m threads list
+   
+   # View a specific session
+   m threads read ga-887760
    ```
 
 ### Advanced: MCP Integration
