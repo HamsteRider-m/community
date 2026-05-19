@@ -13,11 +13,12 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
 ### Key Features
 
 - **Zero Source Code Modification**: Uses Python monkey patching to wrap `get_system_prompt()`
+- **Pure API Architecture**: Direct HTTP API calls, no CLI dependencies
 - **Automatic Working Memory Injection**: Loads nmem working memory at session start
 - **Session Save**: Automatically saves GenericAgent conversations to nmem
 - **Hybrid-Aware Operating Model**: Adapts to GenericAgent's autonomous + user-driven workflow
 - **Graceful Degradation**: Falls back to plain text if JSON parsing fails
-- **100% Test Coverage**: Comprehensive unit, integration, and end-to-end tests
+- **Comprehensive Test Coverage**: 23/23 tests passing with 73% coverage
 
 ---
 
@@ -34,8 +35,8 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
 │  │    → Returns base system prompt                      │   │
 │  ├─────────────────────────────────────────────────────┤   │
 │  │ 2. Call build_prompt_block()                        │   │
-│  │    ├─ Read working memory (m wm read --json)        │   │
-│  │    ├─ Get nmem status (m status)                    │   │
+│  │    ├─ Read working memory (HTTP API)                │   │
+│  │    │  GET /agent/working-memory                      │   │
 │  │    └─ Format as prompt block                        │   │
 │  ├─────────────────────────────────────────────────────┤   │
 │  │ 3. Append nmem block to original prompt             │   │
@@ -87,7 +88,7 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
 ### Prerequisites
 
 - Python 3.10+
-- [Nowledge Memory (nmem)](https://github.com/nowledge-co/nmem) installed and configured
+- [Nowledge Memory (nmem)](https://github.com/nowledge-co/nmem) installed and running
 - GenericAgent installed
 
 ### Setup
@@ -95,14 +96,15 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
 1. **Clone the repository**:
    ```bash
    cd /path/to/GenericAgent/temp
-   git clone https://github.com/nowledge-co/community.git
+   git clone https://github.com/YOUR_USERNAME/community.git
    cd community/nowledge-mem-genericagent-plugin
    ```
 
-2. **Verify nmem is installed**:
+2. **Verify nmem is running**:
    ```bash
-   m --version
-   # Should output: nmem version x.x.x
+   # Check if nmem server is accessible
+   curl http://localhost:3721/health
+   # Should return: {"status":"ok"}
    ```
 
 3. **Install the plugin** (choose one method):
