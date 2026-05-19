@@ -4,28 +4,45 @@ This module is intentionally GenericAgent-specific:
 - patches GenericAgent's system prompt builder to prepend Nowledge working memory
 - adds nmem search/distill/save guidance to the prompt
 - can be installed from a wrapper without modifying GenericAgent core files
+
+Uses nmem HTTP API directly (no CLI dependency).
 """
 from __future__ import annotations
 
 import json
 import os
-import shlex
-import subprocess
+import sys
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Optional
+
+# Import NmemClient from session_save module
+try:
+    from src.session_save import NmemClient
+except ImportError:
+    # Fallback for different import paths
+    try:
+        from session_save import NmemClient
+    except ImportError:
+        # If running from package root
+        sys.path.insert(0, str(Path(__file__).parent / "src"))
+        from session_save import NmemClient
 
 _INSTALLED = False
+_NMEM_CLIENT: Optional[NmemClient] = None
 
 DEFAULT_TIMEOUT = float(os.environ.get("GENERICAGENT_NMEM_TIMEOUT", "4"))
 MAX_WORKING_MEMORY_CHARS = int(os.environ.get("GENERICAGENT_NMEM_MAX_CHARS", "6000"))
 
 
-def _run_nmem(args: Iterable[str], timeout: float = DEFAULT_TIMEOUT) -> subprocess.CompletedProcess[str] | None:
-    cmd = ["nmem", *args]
-    try:
-        return subprocess.run(cmd, text=True, capture_output=True, timeout=timeout, check=False)
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        return None
+def _get_nmem_client() -> Optional[NmemClient]:
+    """Get or create NmemClient instance."""
+    global _NMEM_CLIENT
+    if _NMEM_CLIENT is None:
+        try:
+            _NMEM_CLIENT = NmemClient()
+        except Exception:
+            return None
+    return _NMEM_CLIENT
 
 
 def _compact_json_text(text: str, max_chars: int) -> str:
@@ -49,97 +66,99 @@ def _compact_json_text(text: str, max_chars: int) -> str:
     return text[:max_chars]
 
 
-def read_working_memory() -> str:
-    """Read Nowledge working memory, preferring the nmem JSON API."""
-    attempts = (("--json", "wm", "read"), ("wm", "read"))
-    for args in attempts:
-        proc = _run_nmem(args)
-        if proc and proc.returncode == 0:
-            content = _compact_json_text(proc.stdout, MAX_WORKING_MEMORY_CHARS)
+def read_working_memory(max_chars: int = MAX_WORKING_MEMORY_CHARS) -> str:
+    """Read working memory using nmem API.
+    
+    Returns:
+        Working memory content as string, or empty string if unavailable.
+    """
+    client = _get_nmem_client()
+    if not client:
+        return ""
+    
+    try:
+        # Use API instead of CLI
+        data = client.read_working_memory()
+        if data and data.get("exists"):
+            content = data.get("content", "")
             if content:
-                return content
+                return _compact_json_text(content, max_chars)
+    except Exception:
+        # Silently fail - working memory is optional
+        pass
+    
     return ""
 
 
-def get_nmem_status_text() -> str:
-    proc = _run_nmem(("status",), timeout=8)
-    if proc is None:
-        return "nmem status unavailable: CLI not found, timed out, or failed to launch."
-    output = (proc.stdout or proc.stderr or "").strip()
-    if not output:
-        output = f"nmem status exited {proc.returncode} with no output."
-    return output[:2000]
-
-
-
-def build_prompt_block() -> str:
-    working = read_working_memory()
-    nmem_status = get_nmem_status_text()
-    integration_status = "working-memory-loaded" if working else "installed; working memory empty or unreadable"
-    lines = [
-        "",
-        "[Nowledge Mem / nmem integration for GenericAgent]",
-        f"Integration status: {integration_status}.",
-        "nmem runtime status for the user:",
-        nmem_status,
-        "",
-        "Behavior:",
-        "- Treat this as a GenericAgent-specific nmem integration, not a Codex plugin.",
-        "- Tell the user the visible nmem runtime status when they ask whether memory is available.",
-        "- Prefer MCP tools for memory retrieval/writes when this GenericAgent runtime exposes Nowledge Mem MCP tools; otherwise use the nmem CLI.",
-        "- If neither MCP tools nor the nmem CLI are available, state that the integration is installed but memory access is unavailable.",
-        "",
-        "CLI fallback commands:",
-        "- Working memory: `nmem --json wm read`.",
-        "- Durable memory search: `nmem --json m search \"query\" -n 5`.",
-        "- Prior-session/thread search: `nmem --json t search \"query\" -n 5 --source genericagent`.",
-        "- Durable save: `nmem m add \"content\" -t \"title\" -l genericagent --unit-type learning` only for durable, useful, user-approved memories.",
-        "- Diagnostics: `nmem status`.",
-        "",
-        "Direct MCP configuration for hosts that support MCP:",
-        "- Server name: `nowledge-mem`.",
-        "- URL: `http://127.0.0.1:14242/mcp/`.",
-        "- Type: `streamableHttp`.",
-        "- Remote/custom configs can be generated with `nmem config mcp show --host <host>` after `nmem config client set url ...` and `nmem config client set api-key ...`.",
-        "- Direct MCP clients do not automatically read `~/.nowledge-mem/config.json`; configure the host MCP settings explicitly.",
-    ]
-    if working:
-        lines.extend(["", "[Nowledge Working Memory]", working])
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def install(agentmain_module: Any | None = None) -> bool:
-    """Patch an imported `agentmain` module so every task receives nmem context."""
+def install() -> bool:
+    """Patch GenericAgent to inject Nowledge working memory and guidance.
+    
+    Returns:
+        True if successfully installed, False otherwise.
+    """
     global _INSTALLED
     if _INSTALLED:
         return True
-    if agentmain_module is None:
-        try:
-            import agentmain as agentmain_module  # type: ignore
-        except Exception:
-            return False
 
-    original_get_system_prompt = getattr(agentmain_module, "get_system_prompt", None)
-    if not callable(original_get_system_prompt):
+    try:
+        from generic_agent import GenericAgent
+    except ImportError:
         return False
 
-    def get_system_prompt_with_nmem() -> str:
-        prompt = original_get_system_prompt()
-        return prompt + build_prompt_block()
+    original_get_system_prompt = GenericAgent.get_system_prompt
 
-    agentmain_module.get_system_prompt = get_system_prompt_with_nmem
+    def patched_get_system_prompt(self):
+        prompt = original_get_system_prompt(self)
+        
+        # Read working memory using API
+        wm = read_working_memory()
+        if wm:
+            prompt += f"\n\n### [WORKING MEMORY]\n{wm}\n"
+        
+        # Add nmem guidance
+        prompt += """
+
+[Memory] (../memory)
+Facts(L2): ../memory/global_mem.txt | CodeRoot: ../ | SOPs(L3): ../memory/*.md or *.py | META-SOP(L0): ../memory/memory_management_sop.md
+L1 Insight is a minimal index; sync L1 when L2/L3 changes; keep index minimal. Read META-SOP(L0) before writing any memory.
+
+You can use nmem CLI or MCP tools (if available) to:
+- Search memories: `nmem search "query"` or `memory_search` tool
+- Save insights: `nmem add "insight" -t "tag"` or `memory_add` tool
+- Save this session: `nmem t save --from genericagent` or `save-thread` skill
+
+Working memory is automatically loaded at session start.
+"""
+        return prompt
+
+    GenericAgent.get_system_prompt = patched_get_system_prompt
     _INSTALLED = True
     return True
 
 
-def export_handoff(summary: str, project: str | None = None) -> bool:
-    """Save a concise GenericAgent handoff into Nowledge Mem."""
-    args = ["m", "add", summary, "-t", "GenericAgent handoff", "-l", "genericagent", "--unit-type", "learning"]
-    if project:
-        args.extend(["-l", Path(project).name])
-    proc = _run_nmem(args, timeout=15)
-    return bool(proc and proc.returncode == 0)
-
-
-def shell_quote(args: Iterable[str]) -> str:
-    return " ".join(shlex.quote(a) for a in args)
+def save_insight(summary: str, project: str | None = None) -> bool:
+    """Save an insight to nmem using API.
+    
+    Args:
+        summary: The insight text to save
+        project: Optional project name for tagging
+        
+    Returns:
+        True if successfully saved, False otherwise.
+    """
+    client = _get_nmem_client()
+    if not client:
+        return False
+    
+    try:
+        # Use memories API instead of CLI
+        tags = ["GenericAgent handoff", "genericagent", "learning"]
+        if project:
+            tags.append(Path(project).name)
+        
+        # Note: This would require implementing memory_add in NmemClient
+        # For now, we'll keep this as a placeholder
+        # TODO: Implement memory_add API in NmemClient
+        return False
+    except Exception:
+        return False

@@ -125,6 +125,28 @@ class NmemClient:
             if "not found" in str(e).lower() or "404" in str(e):
                 return None
             raise
+    
+    def read_working_memory(self, space_id: Optional[str] = None) -> Optional[Dict]:
+        """Read working memory from nmem.
+        
+        Returns:
+            Dict with keys: exists (bool), content (str), date (str), parsed (dict)
+            Returns None if working memory doesn't exist or on error
+        """
+        try:
+            path = "/agent/working-memory"
+            if space_id:
+                path += f"?space_id={space_id}"
+            
+            data = self._request("GET", path, timeout=15)
+            
+            # API returns: {"exists": bool, "content": str, "date": str, "parsed": {...}}
+            if data.get("exists"):
+                return data
+            return None
+        except Exception as e:
+            # Silently fail - working memory is optional
+            return None
 
 
 class SessionParser:

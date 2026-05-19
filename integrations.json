@@ -873,6 +873,49 @@
       "slashCommands": []
     },
     {
+      "id": "genericagent-plugin",
+      "name": "GenericAgent",
+      "category": "agent-runtime",
+      "type": "plugin",
+      "version": "0.1.0",
+      "directory": "nowledge-mem-genericagent-plugin",
+      "transport": "cli",
+      "capabilities": {
+        "workingMemory": true,
+        "search": true,
+        "distill": true,
+        "autoRecall": true,
+        "autoCapture": false,
+        "graphExploration": false,
+        "status": true
+      },
+      "threadSave": {
+        "method": "manual-handoff",
+        "note": "GenericAgent has no native transcript parser in nmem yet; durable facts are saved through nmem m add with the genericagent label"
+      },
+      "autonomy": {
+        "bootstrap": "automatic-wrapper",
+        "recall": "agent-guided-cli",
+        "distill": "agent-guided-cli",
+        "threads": "manual-handoff",
+        "bestResultRequires": [
+          "Launch GenericAgent through run_genericagent_with_nmem.py",
+          "Keep nmem CLI authenticated and reachable",
+          "Use the genericagent label for saved handoffs and memories"
+        ]
+      },
+      "install": {
+        "command": "python nowledge-mem-genericagent-plugin/run_genericagent_with_nmem.py --ga-root /path/to/GenericAgent --task demo --input \"...\"",
+        "docsUrl": "/nowledge-mem-genericagent-plugin/README.md"
+      },
+      "toolNaming": {
+        "convention": "nmem-cli",
+        "note": "GenericAgent invokes nmem CLI through its shell/code tools; the wrapper injects working memory and command guidance into the system prompt"
+      },
+      "skills": ["read-working-memory", "search-memory", "distill-memory", "save-handoff"],
+      "slashCommands": []
+    },
+    {
       "id": "mcp-direct",
       "name": "MCP",
       "category": "surface",
