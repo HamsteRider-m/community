@@ -90,8 +90,11 @@ def read_working_memory(max_chars: int = MAX_WORKING_MEMORY_CHARS) -> str:
     return ""
 
 
-def install() -> bool:
+def install(module=None) -> bool:
     """Patch GenericAgent to inject Nowledge working memory and guidance.
+    
+    Args:
+        module: Optional module parameter (for compatibility with wrapper)
     
     Returns:
         True if successfully installed, False otherwise.
@@ -101,17 +104,24 @@ def install() -> bool:
         return True
 
     try:
-        from generic_agent import GenericAgent
-    except ImportError:
+        if module is None:
+            import agentmain as target_module
+        else:
+            target_module = module
+        original_get_system_prompt = target_module.get_system_prompt
+    except (ImportError, AttributeError):
         return False
 
-    original_get_system_prompt = GenericAgent.get_system_prompt
+    # Patch the module-level function.
 
-    def patched_get_system_prompt(self):
-        prompt = original_get_system_prompt(self)
+    def patched_get_system_prompt():
+        """Patched version that injects working memory and nmem guidance."""
+        # Call original function
+        prompt = original_get_system_prompt()
         
         # Read working memory using API
         wm = read_working_memory()
+        
         if wm:
             prompt += f"\n\n### [WORKING MEMORY]\n{wm}\n"
         
@@ -131,7 +141,8 @@ Working memory is automatically loaded at session start.
 """
         return prompt
 
-    GenericAgent.get_system_prompt = patched_get_system_prompt
+    # Apply the patch to the module-level function
+    target_module.get_system_prompt = patched_get_system_prompt
     _INSTALLED = True
     return True
 

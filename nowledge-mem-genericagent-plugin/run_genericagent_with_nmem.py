@@ -55,6 +55,9 @@ def _load_agentmain(ga_root: Path):
     module = importlib.util.module_from_spec(spec)
     sys.modules["agentmain"] = module
     spec.loader.exec_module(module)
+    
+    # Install the patch immediately after exec_module, before GenericAgent is created
+    # This ensures get_system_prompt is patched before agent.run() is called
     genericagent_nmem.install(module)
     return module
 
@@ -162,7 +165,7 @@ def main() -> int:
         return 0
 
     agentmain = _load_agentmain(ga_root)
-    agent = agentmain.GeneraticAgent()
+    agent = agentmain.GenericAgent()
     agent.next_llm(args.llm_no)
     agent.verbose = args.verbose
     threading.Thread(target=agent.run, daemon=True).start()

@@ -143,7 +143,7 @@ class SessionWatcher:
         self.logger.info(f"  Log directory: {self.log_dir}")
         self.logger.info(f"  Check interval: {self.check_interval}s")
         self.logger.info(f"  Min file age: {self.min_file_age}s")
-        self.logger.info(f"  nmem API: {self.client.base_url}")
+        self.logger.info(f"  nmem API: {self.client.api_url}")
         
         try:
             while True:
