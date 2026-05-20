@@ -21,25 +21,32 @@ GenericAgent routes CLI/subagent, Telegram, Streamlit, and other queue-based fro
 | --- | --- | --- |
 | Working-memory injection / AutoRecall | Usable | Plugin API tests and GenericAgent import/injection validation |
 | Session parser / manual backfill | Partial | Parser/API/unit-level validation; use for fallback/backfill |
-| Automatic session-save | Planned | Requires central completion hook implementation plus write/readback acceptance |
+| Automatic session-save | Implemented in plugin | `src/genericagent_session_hook.py` patches the central `put_task` completion path; unit acceptance covers create/append plus readback message-count verification |
 | Legacy `src/session_watcher.py` | Fallback only | Not the SSOT automatic-save mechanism |
 
 ## Minimum implementation requirements
 
-1. Add a central completion-hook registration point in GenericAgent runtime, e.g. `conversation_end_hooks`.
-2. Emit exactly one event per completed task with query/source/response/log path/status metadata.
-3. Invoke nmem save from that hook without blocking or breaking frontend completion.
-4. Treat hook failures as non-fatal; always preserve frontend `done` and queue `task_done()` semantics.
+1. Install `src/genericagent_session_hook.py` from the plugin/wrapper path without modifying GenericAgent core source.
+2. Patch the central `put_task(query, ret)` completion path and emit exactly one save attempt when `query` is present and `ret` is a non-empty assistant string.
+3. Invoke nmem save from that hook without breaking frontend completion; original `put_task` behavior runs first and hook failures are stored on the agent as non-fatal diagnostics.
+4. Verify saved thread state by `get_thread_message_count(...)` readback after create/append.
 5. Keep manual scan/backfill available for historical logs.
 
 ## Required tests before claiming automatic save
 
-- Success path: hook fires exactly once for one completed task.
-- Non-fatal path: a failing hook does not prevent frontend `done` or `task_done()`.
-- Multi-turn/tool-loop path: no duplicate saves per turn.
-- Frontend coverage: CLI/subagent, Telegram, and Streamlit all use the central hook rather than frontend-specific save code.
-- nmem acceptance: saved thread/session is verified by readback from nmem, not only by parser/unit tests.
-- Fallback/backfill: manual scan still works for existing GenericAgent response logs.
+Implemented/covered in this plugin PR:
+
+- Success path: `tests/test_genericagent_session_hook.py` verifies one completed task creates one nmem thread with user+assistant messages.
+- Append path: the same test verifies later completed tasks append to the same thread using an idempotency key.
+- Non-completed path: empty or assistant-only/non-final queue events are ignored.
+- Non-fatal path: original `put_task` behavior is preserved before hook save state is recorded.
+- nmem acceptance: create/append results are verified by readback via `get_thread_message_count(...)` in `NmemSessionArchive.save_turn`.
+- Fallback/backfill: existing parser/manual scan tests remain in `tests/test_session_save.py`.
+
+Still environment-gated before claiming real production telemetry:
+
+- Run the hook against a live nmem API instance and capture readback evidence from that API, not only the fake client used in unit acceptance.
+- Confirm the deployed GenericAgent launcher imports `genericagent_session_hook.install(...)` before frontend traffic starts.
 
 ## Documentation rule
 

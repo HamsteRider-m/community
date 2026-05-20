@@ -877,36 +877,37 @@
       "name": "GenericAgent",
       "category": "agent-runtime",
       "type": "plugin",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "directory": "nowledge-mem-genericagent-plugin",
       "transport": "api+cli-fallback",
-      "status": "partial-ssot-updated",
+      "status": "implemented-with-unit-readback-acceptance",
       "capabilities": {
         "workingMemory": true,
         "search": true,
         "distill": true,
         "autoRecall": true,
-        "autoCapture": false,
+        "autoCapture": true,
         "graphExploration": false,
         "status": true,
         "customInstructions": true
       },
       "threadSave": {
-        "method": "central-completion-hook-planned",
-        "status": "planned",
-        "note": "Automatic session-save should use GenericAgent.run central completion hook. session_watcher/manual scan are fallback/backfill only until hook implementation and nmem readback acceptance pass.",
+        "method": "central-put-task-hook",
+        "status": "implemented-unit-accepted",
+        "module": "nowledge-mem-genericagent-plugin/src/genericagent_session_hook.py",
+        "note": "Automatic session-save patches GenericAgent put_task as the central completion path, preserves original behavior, saves completed user/assistant turns, and verifies create/append by message-count readback. session_watcher/manual scan remain fallback/backfill only.",
         "docs": "nowledge-mem-genericagent-plugin/SESSION_SAVE_SSOT.md"
       },
       "autonomy": {
         "bootstrap": "automatic-wrapper",
         "recall": "automatic-api",
         "distill": "agent-guided-api-or-cli",
-        "threads": "planned-central-hook",
+        "threads": "automatic-capture",
         "bestResultRequires": [
           "Launch GenericAgent through run_genericagent_with_nmem.py or import genericagent_nmem before agentmain.get_system_prompt is used",
           "Keep nmem API authenticated and reachable; CLI remains fallback/manual tooling",
-          "Do not treat session_watcher as primary automatic session-save",
-          "Claim automatic session-save only after central hook implementation and nmem readback acceptance pass"
+          "Install genericagent_session_hook before frontend traffic starts; live nmem API readback evidence is required for production telemetry claims",
+          "Use session_watcher/manual scan only as fallback/backfill for historical logs"
         ]
       },
       "install": {
@@ -915,9 +916,9 @@
       },
       "toolNaming": {
         "convention": "nmem-api+cli-fallback",
-        "note": "Working-memory injection uses nmem API. Guided/manual memory actions may use nmem CLI. Automatic session-save is planned via central completion hook, not watcher."
+        "note": "Working-memory injection uses nmem API. Automatic session-save uses the central GenericAgent put_task hook with API readback verification; nmem CLI/manual scan remain fallback tooling."
       },
-      "skills": ["read-working-memory", "search-memory", "distill-memory", "save-handoff"],
+      "skills": ["read-working-memory", "search-memory", "distill-memory", "save-handoff", "automatic-session-save"],
       "slashCommands": []
     },
     {

@@ -168,23 +168,28 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
 
 4. **Session Save status**:
 
-   Automatic session-save is **not production-ready yet**. The selected design is an in-process GenericAgent completion hook at the central queue consumer (`GenericAgent.run`) so all frontends share one conversation-end event.
+   Automatic session-save is implemented by the in-process central completion hook in `src/genericagent_session_hook.py`. The hook patches GenericAgent's central `put_task(query, ret)` path, preserves original queue/frontend behavior first, then saves completed user/assistant turns to nmem and verifies the saved thread by readback message count.
 
-   Current tools are fallback/backfill only:
-   ```bash
-   # Manual/backfill scan of existing GenericAgent response logs
-   cd /path/to/nowledge-mem-genericagent-plugin
-   python src/session_save_cli.py --help
+   Install the session hook alongside the working-memory plugin before GenericAgent starts handling frontend traffic:
+   ```python
+   import genericagent_nmem
+   genericagent_nmem.install()
 
-   # Legacy watcher: do not use as the primary automatic-save mechanism
-   python src/session_watcher.py
+   from src import genericagent_session_hook
+   genericagent_session_hook.install()
    ```
 
-   Acceptance before claiming automatic save:
-   - hook fires once per completed GenericAgent task across CLI/subagent/Telegram/Streamlit paths
-   - hook failures are non-fatal to frontends and `task_done()`
-   - saved nmem thread is verified by readback, not just parser/unit tests
-   - watcher/manual scan remains documented as fallback/backfill only
+   Fallback/backfill tools remain available for historical logs only:
+   ```bash
+   cd /path/to/nowledge-mem-genericagent-plugin
+   python src/session_save_cli.py --help
+   python src/session_watcher.py  # legacy fallback; not the primary automatic-save mechanism
+   ```
+
+   Acceptance evidence in this repo:
+   - `tests/test_genericagent_session_hook.py`: create/append/readback and central hook patch behavior
+   - `tests/test_session_save.py`: parser/manual backfill API behavior
+   - Live nmem telemetry acceptance remains environment-gated: run with a reachable nmem API and preserve readback evidence.
 
 ### Advanced: MCP Integration
 
@@ -323,7 +328,11 @@ genericagent_nmem.install()  # Must be called before agentmain import
 
 ### Issue: "Automatic session-save did not run"
 
-**Expected today**: automatic session-save is pending the central GenericAgent completion hook. Use manual/backfill tools for existing logs, and do not treat the legacy watcher as the primary acceptance path.
+**Checklist**:
+1. Ensure `genericagent_session_hook.install()` ran before frontend traffic starts.
+2. Confirm the completed event called `put_task(query, ret)` with a non-empty assistant string.
+3. Inspect `agent._nmem_last_session_save` or `agent._nmem_last_session_save_error` for save/readback diagnostics.
+4. Use manual/backfill tools only for historical logs; do not promote the legacy watcher as the primary path.
 
 ---
 
@@ -338,7 +347,8 @@ nowledge-mem-genericagent-plugin/
 ├── AGENTS.md               # Operating model documentation (236 lines)
 ├── README.md               # This file
 ├── pyproject.toml          # Package metadata
-├── tests/                 # Unit/API tests; automatic session-save E2E acceptance pending
+├── src/genericagent_session_hook.py  # Central completion hook for automatic session-save
+├── tests/                 # Unit/API tests including session-save hook acceptance
 └── htmlcov/                # Coverage report (generated)
 ```
 
