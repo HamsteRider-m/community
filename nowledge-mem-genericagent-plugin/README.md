@@ -233,34 +233,33 @@ def build_prompt_block() -> str:
 ### Run Tests
 
 ```bash
-# Install test dependencies
+# Install test dependencies in an isolated environment
 python -m venv venv
 source venv/bin/activate  # or 'venv\Scripts\activate' on Windows
 pip install -e .
 pip install pytest pytest-cov pytest-mock
 
-# Run all tests with coverage
+# Run the current test suite
+pytest tests/ -v
+
+# Optional coverage for the current plugin code
 pytest tests/ -v --cov=genericagent_nmem --cov-report=term-missing
 
-# Run specific test suites
-pytest tests/test_cli.py -v          # CLI invocation tests
-pytest tests/test_prompt.py -v       # Prompt building tests
-pytest tests/test_install.py -v      # Monkey patching tests
-pytest tests/test_e2e_wrapper.py -v  # End-to-end tests
+# Current test files
+pytest tests/test_genericagent_nmem_api.py -v  # working-memory/API client behavior
+pytest tests/test_session_save.py -v          # session-save parser/selection helpers
 ```
 
-### Test Coverage
+### Test Coverage / Acceptance Status
 
-- **Unit Tests** (56 tests):
-  - `test_cli.py`: CLI command execution, error handling, timeouts
-  - `test_prompt.py`: Working memory parsing, prompt formatting
-  - `test_install.py`: Monkey patch behavior, global state management
+- **Current test files in this directory**:
+  - `test_genericagent_nmem_api.py`: working-memory API client behavior and install wrapper behavior
+  - `test_session_save.py`: session-save helper/parser behavior
 
-- **End-to-End Tests** (5 tests):
-  - `test_e2e_wrapper.py`: Real environment wrapper injection
-  - Verifies: prompt modification, behavior preservation, CLI availability
-
-**Current Coverage**: 100% (84/84 statements)
+- **Not yet accepted as production-ready**:
+  - Automatic session-save through GenericAgent's central completion hook still needs implementation.
+  - End-to-end nmem write/readback acceptance is still pending.
+  - Coverage percentages must be generated from the current checkout; do not reuse historical CLI-test coverage numbers.
 
 ---
 
@@ -362,7 +361,7 @@ nowledge-mem-genericagent-plugin/
 | Working Memory Injection | ✅ Auto | ✅ Auto | ✅ Auto |
 | Session Save | 🔧 Central hook planned; watcher fallback/backfill | ✅ Auto (Stop hook) | ✅ Auto |
 | MCP Support | ✅ Yes | ✅ Yes | ✅ Yes |
-| Test Coverage | 100% | N/A | N/A |
+| Test Evidence | API/helper tests; automatic session-save E2E pending | N/A | N/A |
 
 ---
 
@@ -398,4 +397,4 @@ MIT License - See [LICENSE](../LICENSE) for details.
 
 ---
 
-**Status**: ⚠️ Partial / SSOT updated | **Version**: 0.1.0 | **Last Updated**: 2026-05-20
+**Status**: ⚠️ Partial / SSOT updated | **Version**: 0.1.1 | **Last Updated**: 2026-05-20
