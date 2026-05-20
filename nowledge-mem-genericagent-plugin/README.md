@@ -2,7 +2,7 @@
 
 **Nowledge Memory (nmem) integration for GenericAgent** — Seamlessly inject working memory, search history, and distilled insights into GenericAgent's system prompt without modifying source code.
 
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]() [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)]() [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![Status](https://img.shields.io/badge/status-SSOT%20docs%20updated-yellow)]() [![Session%20Save](https://img.shields.io/badge/session%20save-central%20hook%20planned-orange)]() [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
 ---
 
@@ -10,15 +10,17 @@
 
 This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://github.com/nowledge-co/nmem) for persistent context management across sessions. It uses **monkey patching** to inject nmem's working memory into the system prompt at runtime, preserving GenericAgent's source code integrity.
 
+> **SSOT status (2026-05-20)**: This directory is the source of truth for the GenericAgent × nmem community integration; see [SESSION_SAVE_SSOT.md](./SESSION_SAVE_SSOT.md) for the session-save decision record. Working-memory injection / AutoRecall are the usable parts. Automatic session-save must be implemented through GenericAgent's central queue completion point (`GenericAgent.run`, after `done` is emitted and before/around `task_done()`), not through the out-of-process watcher. `src/session_watcher.py` and manual scan tools are retained only as fallback/backfill until the central hook is implemented and tested.
+
 ### Key Features
 
 - **Zero Source Code Modification**: Uses Python monkey patching to wrap `get_system_prompt()`
 - **Pure API Architecture**: Direct HTTP API calls, no CLI dependencies
 - **Automatic Working Memory Injection**: Loads nmem working memory at session start
-- **Session Save**: Automatically saves GenericAgent conversations to nmem
+- **Session Save (planned)**: central GenericAgent completion hook is the intended automatic-save path; watcher/manual scan are fallback/backfill only
 - **Hybrid-Aware Operating Model**: Adapts to GenericAgent's autonomous + user-driven workflow
 - **Graceful Degradation**: Falls back to plain text if JSON parsing fails
-- **Comprehensive Test Coverage**: 23/23 tests passing with 73% coverage
+- **Validated Scope**: working-memory injection and API client behavior are covered by tests; automatic session-save still requires implementation and end-to-end write acceptance
 
 ---
 
@@ -50,11 +52,11 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
 ### Components
 
 **AutoRecall (Working Memory Injection)**
-- **`genericagent_nmem.py`**: Core plugin (84 lines)
-  - `install()`: Monkey patches `agentmain.get_system_prompt()`
-  - `build_prompt_block()`: Constructs nmem context block
-  - `read_working_memory()`: Fetches working memory via CLI
-  - `export_handoff()`: Saves session summary to nmem
+- **`genericagent_nmem.py`**: Core plugin / working-memory injection
+  - `install()`: monkey patches `agentmain.get_system_prompt()`
+  - `build_prompt_block()`: constructs nmem context block
+  - `read_working_memory()`: fetches working memory through the nmem API client
+  - `export_handoff()`: manual handoff/export helper; not automatic session-save acceptance
 
 - **`wrapper.py`**: Standalone wrapper script (optional)
   - Imports and installs the plugin before launching GenericAgent
@@ -70,10 +72,10 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
   - Save specific log files: `python session_save_cli.py /path/to/log.txt`
   - Batch save all logs: `python session_save_cli.py --all`
 
-- **`src/session_watcher.py`**: Automatic monitoring service
+- **`src/session_watcher.py`**: Legacy fallback/backfill watcher
   - Watches `temp/model_responses/` for new/modified logs
-  - Auto-saves completed sessions to nmem
-  - Run as background service: `python session_watcher.py`
+  - Not the primary automatic-save mechanism
+  - Prefer the planned central GenericAgent completion hook for automatic save
 
 **Documentation**
 - **`AGENTS.md`**: Operating model documentation (236 lines)
@@ -164,45 +166,25 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
    - "Based on the working memory, Task A is blocked on X..."
    - "I see from the distilled notes that we tried approach Y before..."
 
-4. **Session Save** — Archive conversations to nmem:
+4. **Session Save status**:
 
-   **Manual Save (via export_handoff)**:
-   ```python
-   # In GenericAgent code or user command:
-   from genericagent_nmem import export_handoff
-   export_handoff("Completed feature X, next: test Y")
-   ```
+   Automatic session-save is **not production-ready yet**. The selected design is an in-process GenericAgent completion hook at the central queue consumer (`GenericAgent.run`) so all frontends share one conversation-end event.
 
-   **CLI Tool (save specific sessions)**:
+   Current tools are fallback/backfill only:
    ```bash
-   # Save a specific log file
+   # Manual/backfill scan of existing GenericAgent response logs
    cd /path/to/nowledge-mem-genericagent-plugin
-   python src/session_save_cli.py /path/to/GenericAgent/temp/model_responses/model_responses_887760.txt
-   
-   # Batch save all log files
-   python src/session_save_cli.py --all
-   ```
+   python src/session_save_cli.py --help
 
-   **Automatic Monitoring (background service)**:
-   ```bash
-   # Start the watcher service
-   cd /path/to/nowledge-mem-genericagent-plugin
+   # Legacy watcher: do not use as the primary automatic-save mechanism
    python src/session_watcher.py
-   
-   # The service will:
-   # - Monitor temp/model_responses/ for new/modified logs
-   # - Auto-save completed sessions to nmem
-   # - Run continuously in the background
    ```
 
-   **Verify saved sessions**:
-   ```bash
-   # List all threads
-   m threads list
-   
-   # View a specific session
-   m threads read ga-887760
-   ```
+   Acceptance before claiming automatic save:
+   - hook fires once per completed GenericAgent task across CLI/subagent/Telegram/Streamlit paths
+   - hook failures are non-fatal to frontends and `task_done()`
+   - saved nmem thread is verified by readback, not just parser/unit tests
+   - watcher/manual scan remains documented as fallback/backfill only
 
 ### Advanced: MCP Integration
 
@@ -227,16 +209,16 @@ If using [Model Context Protocol (MCP)](https://modelcontextprotocol.io/):
 
 ### Environment Variables
 
-- `NMEM_CLI_PATH`: Custom path to `m` CLI (default: searches PATH)
-- `NMEM_TIMEOUT`: CLI command timeout in seconds (default: 10)
+- `NMEM_BASE_URL`: Nowledge Mem API base URL (default depends on local nmem configuration)
+- `NMEM_TIMEOUT`: HTTP/API timeout in seconds
 
 ### Plugin Behavior
 
 Edit `genericagent_nmem.py` to customize:
 
 ```python
-# Adjust working memory read timeout
-proc = _run_nmem(["wm", "read", "--json"], timeout=15)  # default: 10
+# Adjust working memory read timeout / API client behavior
+client = NmemClient(timeout=15)
 
 # Change prompt block format
 def build_prompt_block() -> str:
@@ -340,9 +322,9 @@ import genericagent_nmem
 genericagent_nmem.install()  # Must be called before agentmain import
 ```
 
-### Issue: "Tests fail with 'nmem CLI not found'"
+### Issue: "Automatic session-save did not run"
 
-**Expected**: End-to-end tests require nmem CLI in PATH. Unit tests mock CLI calls and should pass without nmem installed.
+**Expected today**: automatic session-save is pending the central GenericAgent completion hook. Use manual/backfill tools for existing logs, and do not treat the legacy watcher as the primary acceptance path.
 
 ---
 
@@ -352,16 +334,12 @@ genericagent_nmem.install()  # Must be called before agentmain import
 
 ```
 nowledge-mem-genericagent-plugin/
-├── genericagent_nmem.py    # Core plugin (84 lines)
+├── genericagent_nmem.py    # Core plugin / working-memory injection
 ├── wrapper.py              # Standalone wrapper script
 ├── AGENTS.md               # Operating model documentation (236 lines)
 ├── README.md               # This file
 ├── pyproject.toml          # Package metadata
-├── tests/
-│   ├── test_cli.py         # CLI invocation tests (20 tests)
-│   ├── test_prompt.py      # Prompt building tests (20 tests)
-│   ├── test_install.py     # Monkey patching tests (16 tests)
-│   └── test_e2e_wrapper.py # End-to-end tests (5 tests)
+├── tests/                 # Unit/API tests; automatic session-save E2E acceptance pending
 └── htmlcov/                # Coverage report (generated)
 ```
 
@@ -369,9 +347,9 @@ nowledge-mem-genericagent-plugin/
 
 1. **Fork the repository**
 2. **Create a feature branch**: `git checkout -b feature/my-feature`
-3. **Write tests**: Maintain 100% coverage
-4. **Run tests**: `pytest tests/ -v --cov=genericagent_nmem`
-5. **Submit PR**: Include test results and coverage report
+3. **Write tests**: include acceptance evidence for any new capability claims
+4. **Run tests**: `pytest tests/ -v`
+5. **Submit PR**: link the issue and include test/readback evidence
 
 ---
 
@@ -382,7 +360,7 @@ nowledge-mem-genericagent-plugin/
 | Integration Method | Monkey Patch | Hooks | Hooks |
 | Source Code Modification | ❌ No | ✅ Yes | ✅ Yes |
 | Working Memory Injection | ✅ Auto | ✅ Auto | ✅ Auto |
-| Session Save | 🔧 Manual | ✅ Auto (Stop hook) | ✅ Auto |
+| Session Save | 🔧 Central hook planned; watcher fallback/backfill | ✅ Auto (Stop hook) | ✅ Auto |
 | MCP Support | ✅ Yes | ✅ Yes | ✅ Yes |
 | Test Coverage | 100% | N/A | N/A |
 
@@ -390,7 +368,7 @@ nowledge-mem-genericagent-plugin/
 
 ## Roadmap
 
-- [ ] **Automatic Session Save**: Implement Stop hook equivalent without modifying source
+- [ ] **Automatic Session Save**: Implement the GenericAgent central completion hook (`GenericAgent.run`) and verify write/readback acceptance
 - [ ] **AutoRecall**: Proactive memory search based on task context
 - [ ] **Performance Optimization**: Cache working memory for repeated reads
 - [ ] **Configuration File**: Support `~/.config/genericagent-nmem/config.toml`
@@ -420,4 +398,4 @@ MIT License - See [LICENSE](../LICENSE) for details.
 
 ---
 
-**Status**: ✅ Production Ready | **Version**: 1.0.0 | **Last Updated**: 2026-05-20
+**Status**: ⚠️ Partial / SSOT updated | **Version**: 0.1.0 | **Last Updated**: 2026-05-20

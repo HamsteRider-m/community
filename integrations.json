@@ -877,9 +877,10 @@
       "name": "GenericAgent",
       "category": "agent-runtime",
       "type": "plugin",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "directory": "nowledge-mem-genericagent-plugin",
-      "transport": "cli",
+      "transport": "api+cli-fallback",
+      "status": "partial-ssot-updated",
       "capabilities": {
         "workingMemory": true,
         "search": true,
@@ -887,21 +888,25 @@
         "autoRecall": true,
         "autoCapture": false,
         "graphExploration": false,
-        "status": true
+        "status": true,
+        "customInstructions": true
       },
       "threadSave": {
-        "method": "manual-handoff",
-        "note": "GenericAgent has no native transcript parser in nmem yet; durable facts are saved through nmem m add with the genericagent label"
+        "method": "central-completion-hook-planned",
+        "status": "planned",
+        "note": "Automatic session-save should use GenericAgent.run central completion hook. session_watcher/manual scan are fallback/backfill only until hook implementation and nmem readback acceptance pass.",
+        "docs": "nowledge-mem-genericagent-plugin/SESSION_SAVE_SSOT.md"
       },
       "autonomy": {
         "bootstrap": "automatic-wrapper",
-        "recall": "agent-guided-cli",
-        "distill": "agent-guided-cli",
-        "threads": "manual-handoff",
+        "recall": "automatic-api",
+        "distill": "agent-guided-api-or-cli",
+        "threads": "planned-central-hook",
         "bestResultRequires": [
-          "Launch GenericAgent through run_genericagent_with_nmem.py",
-          "Keep nmem CLI authenticated and reachable",
-          "Use the genericagent label for saved handoffs and memories"
+          "Launch GenericAgent through run_genericagent_with_nmem.py or import genericagent_nmem before agentmain.get_system_prompt is used",
+          "Keep nmem API authenticated and reachable; CLI remains fallback/manual tooling",
+          "Do not treat session_watcher as primary automatic session-save",
+          "Claim automatic session-save only after central hook implementation and nmem readback acceptance pass"
         ]
       },
       "install": {
@@ -909,8 +914,8 @@
         "docsUrl": "/nowledge-mem-genericagent-plugin/README.md"
       },
       "toolNaming": {
-        "convention": "nmem-cli",
-        "note": "GenericAgent invokes nmem CLI through its shell/code tools; the wrapper injects working memory and command guidance into the system prompt"
+        "convention": "nmem-api+cli-fallback",
+        "note": "Working-memory injection uses nmem API. Guided/manual memory actions may use nmem CLI. Automatic session-save is planned via central completion hook, not watcher."
       },
       "skills": ["read-working-memory", "search-memory", "distill-memory", "save-handoff"],
       "slashCommands": []
