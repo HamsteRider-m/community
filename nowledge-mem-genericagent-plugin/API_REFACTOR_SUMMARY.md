@@ -2,13 +2,13 @@
 
 **Date**: 2026-05-20  
 **Task**: Migrate from CLI-based to Pure API Architecture  
-**Status**: ✅ API refactor completed; automatic session-save remains planned/pending central hook acceptance
+**Status**: ✅ API refactor completed; automatic session-save implemented via task-queue/display-queue bridge; live nmem telemetry remains environment-gated
 
 ---
 
 ## Overview
 
-Successfully refactored the GenericAgent nmem plugin from CLI-based implementation to pure API architecture for working-memory/API paths. This does not by itself make automatic GenericAgent session-save production-ready; the SSOT design is the central GenericAgent completion hook documented in `SESSION_SAVE_SSOT.md`.
+Successfully refactored the GenericAgent nmem plugin from CLI-based implementation to pure API architecture for working-memory/API paths. Automatic GenericAgent session-save is now implemented separately through the in-process task-queue/display-queue completion bridge documented in `SESSION_SAVE_SSOT.md`; live nmem telemetry acceptance still requires a reachable nmem API environment.
 
 ---
 
@@ -47,7 +47,7 @@ working_memory = client.read_working_memory()
 #### **Tests**
 - **Deleted**: `test_cli.py`, `test_prompt.py`, `test_install.py`, `test_e2e_wrapper.py` (38 CLI-dependent tests)
 - **Created**: `test_genericagent_nmem_api.py` (15 comprehensive API tests)
-- **Result**: API/unit tests were reported for the refactor; automatic session-save still needs central-hook E2E write/readback acceptance before any production-ready claim
+- **Result**: API/unit tests cover the refactor; automatic session-save now has unit/readback coverage plus a real GenericAgent physical simulation. Live nmem write/readback telemetry remains environment-gated.
 
 ---
 
@@ -116,7 +116,7 @@ nmem Server API
 ```bash
 $ pytest tests/ -v
 # Historical API/unit-test transcript for the API refactor.
-# This is not automatic session-save E2E acceptance.
+# Current session-save acceptance is documented in SESSION_SAVE_SSOT.md and README.md.
 collected 23 items
 
 tests/test_genericagent_nmem_api.py::TestNmemClientAPI::test_read_working_memory_success PASSED

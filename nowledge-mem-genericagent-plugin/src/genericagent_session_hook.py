@@ -1,9 +1,14 @@
-"""GenericAgent central completion hook for nmem session save.
+"""GenericAgent in-process session-save bridge for nmem.
 
-This module patches GenericAgent's central queue consumer method (`put_task`) so
-all frontends that send completed user/assistant turns through that queue get a
-single automatic session-save path. It avoids filesystem log watching as the
-primary mechanism; watcher/backfill tools remain fallback only.
+Current GenericAgent enqueues tasks as dictionaries containing ``query`` and an
+``output`` queue, then posts the final assistant text to that display queue as a
+``{"done": ...}`` item.  This module installs an instance-level task-queue proxy
+that wraps each task display queue and archives the completed turn when the done
+item is emitted.
+
+The bridge does not modify GenericAgent source, does not patch the GenericAgent
+class, and keeps ``put_task(query, source=..., images=...)`` semantics intact.
+Filesystem watchers/backfill tools remain fallback only.
 """
 from __future__ import annotations
 
@@ -59,6 +64,27 @@ def _title_from(agent: Any, user_text: str) -> str:
     return f"GenericAgent: {first or time.strftime('%Y-%m-%d %H:%M:%S')}"
 
 
+def _context_get(context: Dict[str, Any], *names: str) -> Any:
+    for name in names:
+        if name in context:
+            return context[name]
+    return None
+
+
+def _extract_turn(context: Dict[str, Any]) -> tuple[Any, Any]:
+    """Extract user and assistant text from a completed-task context.
+
+    The task-queue bridge passes ``raw_query`` from the queued task and
+    ``response`` from the display queue's final ``{"done": ...}`` item.
+    The broader aliases keep the helper compatible with tests and future
+    GenericAgent completion-hook shapes.
+    """
+    response = _context_get(context, "response", "assistant_response", "assistant")
+    assistant_text = getattr(response, "content", response)
+    user_text = _context_get(context, "raw_query", "query", "user_query", "user", "prompt")
+    return user_text, assistant_text
+
+
 class NmemSessionArchive:
     """Append completed GenericAgent turns to an nmem thread."""
 
@@ -108,6 +134,7 @@ class NmemSessionArchive:
         except Exception:
             after_count = None
         result["verified_message_count"] = after_count
+        result["verified"] = after_count is not None and after_count >= 2
         self.last_result = result
         return result
 
@@ -121,36 +148,88 @@ def _archive_for(agent: Any, client_factory=NmemClient) -> NmemSessionArchive:
     return archive
 
 
-def install(agent_class: Optional[type] = None, client_factory=NmemClient) -> bool:
-    """Install the central queue hook on GenericAgent/GeneraticAgent.
+def make_turn_end_hook(agent: Any, client_factory=NmemClient):
+    """Create the non-fatal save callback used by the display-queue bridge."""
 
-    The patched method keeps original behavior first, then saves only completed
-    user/assistant turns when `query` is present and `ret` is a string.
+    def nmem_turn_end_hook(context: Dict[str, Any]):
+        user_text, assistant_text = _extract_turn(context or {})
+        if not (str(user_text or "").strip() or str(assistant_text or "").strip()):
+            return None
+        archive = _archive_for(agent, client_factory=client_factory)
+        try:
+            save_result = archive.save_turn(agent, user_text, assistant_text)
+            setattr(agent, "_nmem_last_session_save", save_result)
+            setattr(agent, "_nmem_thread_id", archive.thread_id)
+            return save_result
+        except Exception as exc:  # non-fatal for GenericAgent runtime
+            setattr(agent, "_nmem_last_session_save_error", repr(exc))
+            return None
+
+    nmem_turn_end_hook._nmem_session_hook = True  # type: ignore[attr-defined]
+    return nmem_turn_end_hook
+
+
+class NmemDisplayQueueProxy:
+    """Display-queue proxy that saves a turn when GenericAgent emits ``done``."""
+
+    def __init__(self, inner: Any, agent: Any, user_text: Any, client_factory=NmemClient):
+        self._inner = inner
+        self._agent = agent
+        self._user_text = user_text
+        self._client_factory = client_factory
+        self._nmem_saved = False
+
+    def put(self, item: Any, *args: Any, **kwargs: Any):
+        result = self._inner.put(item, *args, **kwargs)
+        if isinstance(item, dict) and "done" in item and not self._nmem_saved:
+            self._nmem_saved = True
+            hook = make_turn_end_hook(self._agent, client_factory=self._client_factory)
+            hook({"raw_query": self._user_text, "response": item.get("done"), "display_item": item})
+        return result
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+class NmemTaskQueueProxy:
+    """Task-queue proxy that wraps per-task display queues before GA consumes them."""
+
+    def __init__(self, inner: Any, agent: Any, client_factory=NmemClient):
+        self._inner = inner
+        self._agent = agent
+        self._client_factory = client_factory
+
+    def put(self, task: Any, *args: Any, **kwargs: Any):
+        if isinstance(task, dict) and "output" in task and not getattr(task["output"], "_nmem_display_queue_proxy", False):
+            task = dict(task)
+            task["output"] = NmemDisplayQueueProxy(task["output"], self._agent, task.get("query"), self._client_factory)
+            task["output"]._nmem_display_queue_proxy = True
+        return self._inner.put(task, *args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+def install(agent: Optional[Any] = None, client_factory=NmemClient) -> bool:
+    """Install nmem session-save on a GenericAgent instance.
+
+    The live GenericAgent runtime currently exposes task completion through each
+    task's display queue rather than a public class hook.  We therefore replace
+    only this agent instance's ``task_queue`` with a delegating proxy that wraps
+    per-task display queues and saves when a ``done`` item is posted.  ``put_task``
+    itself and the GenericAgent class remain untouched.
     """
-    if agent_class is None:
-        import agentmain  # type: ignore
-        agent_class = getattr(agentmain, "GeneraticAgent", None) or getattr(agentmain, "GenericAgent")
-
-    if getattr(agent_class, "_nmem_session_hook_installed", False):
+    if agent is None:
+        return False
+    task_queue = getattr(agent, "task_queue", None)
+    if task_queue is None:
+        return False
+    if getattr(task_queue, "_nmem_task_queue_proxy", False):
+        setattr(agent, "_nmem_session_hook_installed", True)
         return True
 
-    original_put_task = getattr(agent_class, "put_task", None)
-    if original_put_task is None:
-        return False
-
-    def put_task_with_nmem(self, query, ret, *args, **kwargs):
-        original_result = original_put_task(self, query, ret, *args, **kwargs)
-        if query is not None and isinstance(ret, str) and ret.strip():
-            archive = _archive_for(self, client_factory=client_factory)
-            try:
-                save_result = archive.save_turn(self, query, ret)
-                setattr(self, "_nmem_last_session_save", save_result)
-                setattr(self, "_nmem_thread_id", archive.thread_id)
-            except Exception as exc:  # non-fatal for GenericAgent runtime
-                setattr(self, "_nmem_last_session_save_error", repr(exc))
-        return original_result
-
-    put_task_with_nmem._original_put_task = original_put_task  # type: ignore[attr-defined]
-    agent_class.put_task = put_task_with_nmem
-    agent_class._nmem_session_hook_installed = True
+    proxy = NmemTaskQueueProxy(task_queue, agent, client_factory=client_factory)
+    proxy._nmem_task_queue_proxy = True  # type: ignore[attr-defined]
+    setattr(agent, "task_queue", proxy)
+    setattr(agent, "_nmem_session_hook_installed", True)
     return True
