@@ -369,7 +369,7 @@ The migration from CLI to pure API architecture was successful, resulting in:
 - ✅ **Easier maintenance**: Single HTTP client, unified error handling
 - ✅ **API/unit coverage was reported for the refactor scope**
 
-The API refactor is useful for the working-memory path, but the GenericAgent plugin is **not** production-ready for automatic session-save until the central completion hook is implemented and verified by nmem write/readback acceptance. See `SESSION_SAVE_SSOT.md`.
+The API refactor is useful for the working-memory path, and automatic session-save is now implemented by the GenericAgent task-queue/display-queue completion bridge. Production telemetry claims still require live nmem write/readback evidence in the deployed environment. See `SESSION_SAVE_SSOT.md`.
 
 ---
 

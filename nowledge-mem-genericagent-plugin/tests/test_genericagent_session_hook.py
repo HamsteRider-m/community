@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from genericagent_session_hook import NmemSessionArchive, install, make_turn_end_hook
+from genericagent_session_hook import NmemSessionArchive, install, make_turn_end_hook, _stable_thread_id
 
 
 class FakeClient:
@@ -118,3 +118,17 @@ def test_hook_skips_empty_turn_context():
 
     assert client.created == []
     assert not hasattr(agent, "_nmem_last_session_save")
+
+
+def test_stable_thread_id_prefers_session_id_for_watcher_compatibility():
+    agent = FakeGenericAgent()
+    agent.session_id = "840360"
+
+    assert _stable_thread_id(agent) == "ga-840360"
+
+
+def test_stable_thread_id_sanitizes_session_id():
+    agent = FakeGenericAgent()
+    agent.session_id = "tg app/with spaces"
+
+    assert _stable_thread_id(agent) == "ga-tg-app-with-spaces"

@@ -892,10 +892,10 @@
         "customInstructions": true
       },
       "threadSave": {
-        "method": "central-put-task-hook",
+        "method": "task-queue-display-queue-bridge",
         "status": "implemented-unit-accepted",
         "module": "nowledge-mem-genericagent-plugin/src/genericagent_session_hook.py",
-        "note": "Automatic session-save patches GenericAgent put_task as the central completion path, preserves original behavior, saves completed user/assistant turns, and verifies create/append by message-count readback. session_watcher/manual scan remain fallback/backfill only.",
+        "note": "Automatic session-save installs an instance-level GenericAgent task_queue/display_queue bridge as the central completion path, preserves original put_task behavior without patching the class or method, saves completed user/assistant turns, and verifies create/append by message-count readback. session_watcher/manual scan remain fallback/backfill only.",
         "docs": "nowledge-mem-genericagent-plugin/SESSION_SAVE_SSOT.md"
       },
       "autonomy": {
@@ -916,7 +916,7 @@
       },
       "toolNaming": {
         "convention": "nmem-api+cli-fallback",
-        "note": "Working-memory injection uses nmem API. Automatic session-save uses the central GenericAgent put_task hook with API readback verification; nmem CLI/manual scan remain fallback tooling."
+        "note": "Working-memory injection uses nmem API. Automatic session-save uses the GenericAgent task_queue/display_queue bridge with API readback verification; nmem CLI/manual scan remain fallback tooling."
       },
       "skills": ["read-working-memory", "search-memory", "distill-memory", "save-handoff", "automatic-session-save"],
       "slashCommands": []

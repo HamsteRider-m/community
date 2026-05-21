@@ -39,10 +39,25 @@ def _clip(value: Any, limit: int) -> str:
     return text
 
 
+def _sanitize_thread_suffix(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    safe = "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in text)
+    return safe.strip(".-_")[:80]
+
+
 def _stable_thread_id(agent: Any) -> str:
+    session_id = _sanitize_thread_suffix(getattr(agent, "session_id", "") or "")
+    if session_id:
+        return f"ga-{session_id}"
+
     task_dir = getattr(agent, "task_dir", "") or ""
-    session_id = getattr(agent, "session_id", "") or ""
-    seed = session_id or task_dir or f"pid-{os.getpid()}-{id(agent)}"
+    task_name = _sanitize_thread_suffix(Path(str(task_dir)).name if task_dir else "")
+    if task_name:
+        return f"ga-{task_name}"
+
+    seed = task_dir or f"pid-{os.getpid()}-{id(agent)}"
     digest = hashlib.sha256(str(seed).encode("utf-8", errors="ignore")).hexdigest()[:16]
     return f"ga-{digest}"
 

@@ -409,4 +409,4 @@ MIT License - See [LICENSE](../LICENSE) for details.
 
 ---
 
-**Status**: ⚠️ Task-queue bridge implemented; live nmem telemetry pending | **Version**: 0.1.1 | **Last Updated**: 2026-05-20
+**Status**: ⚠️ Task-queue bridge implemented; live nmem telemetry pending | **Version**: 0.1.2 | **Last Updated**: 2026-05-20
