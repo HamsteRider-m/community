@@ -2,13 +2,13 @@
 
 **Date**: 2026-05-20  
 **Task**: Migrate from CLI-based to Pure API Architecture  
-**Status**: ✅ Completed
+**Status**: ✅ API refactor completed; automatic session-save implemented via task-queue/display-queue bridge; live nmem telemetry remains environment-gated
 
 ---
 
 ## Overview
 
-Successfully refactored the GenericAgent nmem plugin from CLI-based implementation to pure API architecture, eliminating all external CLI dependencies and improving reliability, performance, and maintainability.
+Successfully refactored the GenericAgent nmem plugin from CLI-based implementation to pure API architecture for working-memory/API paths. Automatic GenericAgent session-save is now implemented separately through the in-process task-queue/display-queue completion bridge documented in `SESSION_SAVE_SSOT.md`; live nmem telemetry acceptance still requires a reachable nmem API environment.
 
 ---
 
@@ -47,7 +47,7 @@ working_memory = client.read_working_memory()
 #### **Tests**
 - **Deleted**: `test_cli.py`, `test_prompt.py`, `test_install.py`, `test_e2e_wrapper.py` (38 CLI-dependent tests)
 - **Created**: `test_genericagent_nmem_api.py` (15 comprehensive API tests)
-- **Result**: 23/23 tests passing, 73% code coverage
+- **Result**: API/unit tests cover the refactor; automatic session-save now has unit/readback coverage plus a real GenericAgent physical simulation. Live nmem write/readback telemetry remains environment-gated.
 
 ---
 
@@ -57,7 +57,7 @@ working_memory = client.read_working_memory()
 
 **Key Features Section**:
 - Added: "Pure API Architecture: Direct HTTP API calls, no CLI dependencies"
-- Updated: Test coverage stats (23/23 tests, 73% coverage)
+- Updated: API refactor scope; do not treat coverage stats as automatic session-save acceptance
 
 **Architecture Diagram**:
 - Removed: CLI subprocess references
@@ -115,7 +115,8 @@ nmem Server API
 ### Test Coverage
 ```bash
 $ pytest tests/ -v
-============================= test session starts ==============================
+# Historical API/unit-test transcript for the API refactor.
+# Current session-save acceptance is documented in SESSION_SAVE_SSOT.md and README.md.
 collected 23 items
 
 tests/test_genericagent_nmem_api.py::TestNmemClientAPI::test_read_working_memory_success PASSED
@@ -366,9 +367,9 @@ The migration from CLI to pure API architecture was successful, resulting in:
 - ✅ **Better performance**: 2-3x faster operations
 - ✅ **Improved reliability**: Direct API calls, no subprocess issues
 - ✅ **Easier maintenance**: Single HTTP client, unified error handling
-- ✅ **Full test coverage**: 23/23 tests passing
+- ✅ **API/unit coverage was reported for the refactor scope**
 
-The plugin is now production-ready and follows best practices from mature nmem integrations.
+The API refactor is useful for the working-memory path, and automatic session-save is now implemented by the GenericAgent task-queue/display-queue completion bridge. Production telemetry claims still require live nmem write/readback evidence in the deployed environment. See `SESSION_SAVE_SSOT.md`.
 
 ---
 

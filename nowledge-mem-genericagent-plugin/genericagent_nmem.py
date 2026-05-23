@@ -90,6 +90,29 @@ def read_working_memory(max_chars: int = MAX_WORKING_MEMORY_CHARS) -> str:
     return ""
 
 
+def _append_nmem_prompt(prompt: str) -> str:
+    """Append working memory and nmem guidance to a GenericAgent prompt."""
+    wm = read_working_memory()
+
+    if wm:
+        prompt += f"\n\n### [WORKING MEMORY]\n{wm}\n"
+
+    prompt += """
+
+[Memory] (../memory)
+Facts(L2): ../memory/global_mem.txt | CodeRoot: ../ | SOPs(L3): ../memory/*.md or *.py | META-SOP(L0): ../memory/memory_management_sop.md
+L1 Insight is a minimal index; sync L1 when L2/L3 changes; keep index minimal. Read META-SOP(L0) before writing any memory.
+
+You can use nmem CLI or MCP tools (if available) to:
+- Search memories: `nmem search "query"` or `memory_search` tool
+- Save insights: `nmem add "insight" -t "tag"` or `memory_add` tool
+- Save this session: `nmem t save --from genericagent` or `save-thread` skill
+
+Working memory is automatically loaded at session start.
+"""
+    return prompt
+
+
 def install(module=None) -> bool:
     """Patch GenericAgent to inject Nowledge working memory and guidance.
     
@@ -103,46 +126,46 @@ def install(module=None) -> bool:
     if _INSTALLED:
         return True
 
+    if module is not None:
+        try:
+            original_get_system_prompt = module.get_system_prompt
+        except AttributeError:
+            return False
+
+        def patched_module_get_system_prompt():
+            prompt = original_get_system_prompt()
+            return _append_nmem_prompt(prompt)
+
+        module.get_system_prompt = patched_module_get_system_prompt
+        _INSTALLED = True
+        return True
+
     try:
-        if module is None:
-            import agentmain as target_module
-        else:
-            target_module = module
+        import agentmain as target_module
         original_get_system_prompt = target_module.get_system_prompt
+    except (ImportError, AttributeError):
+        target_module = None
+    else:
+        def patched_agentmain_get_system_prompt():
+            prompt = original_get_system_prompt()
+            return _append_nmem_prompt(prompt)
+
+        target_module.get_system_prompt = patched_agentmain_get_system_prompt
+        _INSTALLED = True
+        return True
+
+    try:
+        import generic_agent as generic_agent_module
+        target_class = generic_agent_module.GenericAgent
+        original_get_system_prompt = target_class.get_system_prompt
     except (ImportError, AttributeError):
         return False
 
-    # Patch the module-level function.
+    def patched_class_get_system_prompt(self, *args, **kwargs):
+        prompt = original_get_system_prompt(self, *args, **kwargs)
+        return _append_nmem_prompt(prompt)
 
-    def patched_get_system_prompt():
-        """Patched version that injects working memory and nmem guidance."""
-        # Call original function
-        prompt = original_get_system_prompt()
-        
-        # Read working memory using API
-        wm = read_working_memory()
-        
-        if wm:
-            prompt += f"\n\n### [WORKING MEMORY]\n{wm}\n"
-        
-        # Add nmem guidance
-        prompt += """
-
-[Memory] (../memory)
-Facts(L2): ../memory/global_mem.txt | CodeRoot: ../ | SOPs(L3): ../memory/*.md or *.py | META-SOP(L0): ../memory/memory_management_sop.md
-L1 Insight is a minimal index; sync L1 when L2/L3 changes; keep index minimal. Read META-SOP(L0) before writing any memory.
-
-You can use nmem CLI or MCP tools (if available) to:
-- Search memories: `nmem search "query"` or `memory_search` tool
-- Save insights: `nmem add "insight" -t "tag"` or `memory_add` tool
-- Save this session: `nmem t save --from genericagent` or `save-thread` skill
-
-Working memory is automatically loaded at session start.
-"""
-        return prompt
-
-    # Apply the patch to the module-level function
-    target_module.get_system_prompt = patched_get_system_prompt
+    target_class.get_system_prompt = patched_class_get_system_prompt
     _INSTALLED = True
     return True
 

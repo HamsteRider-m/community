@@ -2,7 +2,7 @@
 
 **Nowledge Memory (nmem) integration for GenericAgent** — Seamlessly inject working memory, search history, and distilled insights into GenericAgent's system prompt without modifying source code.
 
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]() [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)]() [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![Status](https://img.shields.io/badge/status-bridge%20implemented-yellow)]() [![Session%20Save](https://img.shields.io/badge/session%20save-task__queue%20bridge-green)]() [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
 ---
 
@@ -10,15 +10,17 @@
 
 This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://github.com/nowledge-co/nmem) for persistent context management across sessions. It uses **monkey patching** to inject nmem's working memory into the system prompt at runtime, preserving GenericAgent's source code integrity.
 
+> **SSOT status (2026-05-20)**: This directory is the source of truth for the GenericAgent × nmem community integration; see [SESSION_SAVE_SSOT.md](./SESSION_SAVE_SSOT.md) for the session-save decision record. Working-memory injection / AutoRecall are usable. Automatic session-save is implemented through an in-process `task_queue` / display-queue completion bridge, not through the out-of-process watcher. `src/session_watcher.py` and manual scan tools are retained only as fallback/backfill for historical logs.
+
 ### Key Features
 
 - **Zero Source Code Modification**: Uses Python monkey patching to wrap `get_system_prompt()`
 - **Pure API Architecture**: Direct HTTP API calls, no CLI dependencies
 - **Automatic Working Memory Injection**: Loads nmem working memory at session start
-- **Session Save**: Automatically saves GenericAgent conversations to nmem
+- **Session Save**: GenericAgent `task_queue` / display-queue automatic-save bridge is implemented; watcher/manual scan are fallback/backfill only
 - **Hybrid-Aware Operating Model**: Adapts to GenericAgent's autonomous + user-driven workflow
 - **Graceful Degradation**: Falls back to plain text if JSON parsing fails
-- **Comprehensive Test Coverage**: 23/23 tests passing with 73% coverage
+- **Validated Scope**: working-memory injection, API client behavior, wrapper hook installation, and session-save hook create/append/readback behavior are covered by tests; live nmem telemetry acceptance is environment-gated
 
 ---
 
@@ -50,11 +52,11 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
 ### Components
 
 **AutoRecall (Working Memory Injection)**
-- **`genericagent_nmem.py`**: Core plugin (84 lines)
-  - `install()`: Monkey patches `agentmain.get_system_prompt()`
-  - `build_prompt_block()`: Constructs nmem context block
-  - `read_working_memory()`: Fetches working memory via CLI
-  - `export_handoff()`: Saves session summary to nmem
+- **`genericagent_nmem.py`**: Core plugin / working-memory injection
+  - `install()`: monkey patches `agentmain.get_system_prompt()`
+  - `build_prompt_block()`: constructs nmem context block
+  - `read_working_memory()`: fetches working memory through the nmem API client
+  - `export_handoff()`: manual handoff/export helper; not automatic session-save acceptance
 
 - **`wrapper.py`**: Standalone wrapper script (optional)
   - Imports and installs the plugin before launching GenericAgent
@@ -70,10 +72,10 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
   - Save specific log files: `python session_save_cli.py /path/to/log.txt`
   - Batch save all logs: `python session_save_cli.py --all`
 
-- **`src/session_watcher.py`**: Automatic monitoring service
+- **`src/session_watcher.py`**: Legacy fallback/backfill watcher
   - Watches `temp/model_responses/` for new/modified logs
-  - Auto-saves completed sessions to nmem
-  - Run as background service: `python session_watcher.py`
+  - Not the primary automatic-save mechanism
+  - Prefer the implemented `task_queue` / display-queue bridge for automatic save
 
 **Documentation**
 - **`AGENTS.md`**: Operating model documentation (236 lines)
@@ -164,45 +166,31 @@ This plugin enables GenericAgent to leverage [Nowledge Memory (nmem)](https://gi
    - "Based on the working memory, Task A is blocked on X..."
    - "I see from the distilled notes that we tried approach Y before..."
 
-4. **Session Save** — Archive conversations to nmem:
+4. **Session Save status**:
 
-   **Manual Save (via export_handoff)**:
+   Automatic session-save is implemented by the in-process task-queue/display-queue bridge in `src/genericagent_session_hook.py`. Current GenericAgent enqueues dict tasks into `agent.task_queue` and posts the final assistant text to each task's display queue as a `{"done": ...}` item. The plugin replaces only the live agent instance's `task_queue` with an idempotent delegating proxy, wraps each task display queue, does not patch `put_task` or the GenericAgent class, then saves completed user/assistant turns to nmem and verifies the saved thread by readback message count.
+
+   Install the session hook alongside the working-memory plugin before GenericAgent starts handling frontend traffic:
    ```python
-   # In GenericAgent code or user command:
-   from genericagent_nmem import export_handoff
-   export_handoff("Completed feature X, next: test Y")
+   import genericagent_nmem
+   genericagent_nmem.install(agentmain)  # prompt/AutoRecall patch
+
+   agent = agentmain.GenericAgent()
+   from src import genericagent_session_hook
+   genericagent_session_hook.install(agent)  # automatic session-save hook
    ```
 
-   **CLI Tool (save specific sessions)**:
+   Fallback/backfill tools remain available for historical logs only:
    ```bash
-   # Save a specific log file
    cd /path/to/nowledge-mem-genericagent-plugin
-   python src/session_save_cli.py /path/to/GenericAgent/temp/model_responses/model_responses_887760.txt
-   
-   # Batch save all log files
-   python src/session_save_cli.py --all
+   python src/session_save_cli.py --help
+   python src/session_watcher.py  # legacy fallback; not the primary automatic-save mechanism
    ```
 
-   **Automatic Monitoring (background service)**:
-   ```bash
-   # Start the watcher service
-   cd /path/to/nowledge-mem-genericagent-plugin
-   python src/session_watcher.py
-   
-   # The service will:
-   # - Monitor temp/model_responses/ for new/modified logs
-   # - Auto-save completed sessions to nmem
-   # - Run continuously in the background
-   ```
-
-   **Verify saved sessions**:
-   ```bash
-   # List all threads
-   m threads list
-   
-   # View a specific session
-   m threads read ga-887760
-   ```
+   Acceptance evidence in this repo:
+   - `tests/test_genericagent_session_hook.py`: create/append/readback and task-queue/display-queue bridge behavior
+   - `tests/test_session_save.py`: parser/manual backfill API behavior
+   - Live nmem telemetry acceptance remains environment-gated: run with a reachable nmem API and preserve readback evidence.
 
 ### Advanced: MCP Integration
 
@@ -227,16 +215,16 @@ If using [Model Context Protocol (MCP)](https://modelcontextprotocol.io/):
 
 ### Environment Variables
 
-- `NMEM_CLI_PATH`: Custom path to `m` CLI (default: searches PATH)
-- `NMEM_TIMEOUT`: CLI command timeout in seconds (default: 10)
+- `NMEM_BASE_URL`: Nowledge Mem API base URL (default depends on local nmem configuration)
+- `NMEM_TIMEOUT`: HTTP/API timeout in seconds
 
 ### Plugin Behavior
 
 Edit `genericagent_nmem.py` to customize:
 
 ```python
-# Adjust working memory read timeout
-proc = _run_nmem(["wm", "read", "--json"], timeout=15)  # default: 10
+# Adjust working memory read timeout / API client behavior
+client = NmemClient(timeout=15)
 
 # Change prompt block format
 def build_prompt_block() -> str:
@@ -251,34 +239,34 @@ def build_prompt_block() -> str:
 ### Run Tests
 
 ```bash
-# Install test dependencies
+# Install test dependencies in an isolated environment
 python -m venv venv
 source venv/bin/activate  # or 'venv\Scripts\activate' on Windows
 pip install -e .
 pip install pytest pytest-cov pytest-mock
 
-# Run all tests with coverage
+# Run the current test suite
+pytest tests/ -v
+
+# Optional coverage for the current plugin code
 pytest tests/ -v --cov=genericagent_nmem --cov-report=term-missing
 
-# Run specific test suites
-pytest tests/test_cli.py -v          # CLI invocation tests
-pytest tests/test_prompt.py -v       # Prompt building tests
-pytest tests/test_install.py -v      # Monkey patching tests
-pytest tests/test_e2e_wrapper.py -v  # End-to-end tests
+# Current test files
+pytest tests/test_genericagent_nmem_api.py -v  # working-memory/API client behavior
+pytest tests/test_session_save.py -v          # session-save parser/selection helpers
 ```
 
-### Test Coverage
+### Test Coverage / Acceptance Status
 
-- **Unit Tests** (56 tests):
-  - `test_cli.py`: CLI command execution, error handling, timeouts
-  - `test_prompt.py`: Working memory parsing, prompt formatting
-  - `test_install.py`: Monkey patch behavior, global state management
+- **Current test files in this directory**:
+  - `test_genericagent_nmem_api.py`: working-memory API client behavior and install wrapper behavior
+  - `test_session_save.py`: session-save helper/parser behavior
+  - `test_genericagent_session_hook.py`: task-queue/display-queue automatic save create/append/readback acceptance
+  - `test_run_genericagent_with_nmem.py`: wrapper installs the session hook on the created agent instance
 
-- **End-to-End Tests** (5 tests):
-  - `test_e2e_wrapper.py`: Real environment wrapper injection
-  - Verifies: prompt modification, behavior preservation, CLI availability
-
-**Current Coverage**: 100% (84/84 statements)
+- **Environment-gated acceptance**:
+  - Live nmem write/readback telemetry still requires a reachable nmem API instance.
+  - Coverage percentages must be generated from the current checkout; do not reuse historical CLI-test coverage numbers.
 
 ---
 
@@ -299,8 +287,8 @@ See [AGENTS.md](./AGENTS.md) for detailed guidelines on:
    - Search on explicit user request or knowledge gap
    - Save at session end or major milestone
 
-2. **No Source Code Modification**: Uses monkey patching instead of hooks
-   - Install via `wrapper.py` or manual import
+2. **No GenericAgent Source Code Modification**: prompt injection uses monkey patching; session-save uses an instance-level `task_queue` proxy and per-task display-queue wrapper
+   - Install via `run_genericagent_with_nmem.py`, `wrapper.py`, or manual import
    - Preserves GenericAgent's update path
 
 3. **Graceful Degradation**: Falls back if nmem is unavailable
@@ -340,9 +328,13 @@ import genericagent_nmem
 genericagent_nmem.install()  # Must be called before agentmain import
 ```
 
-### Issue: "Tests fail with 'nmem CLI not found'"
+### Issue: "Automatic session-save did not run"
 
-**Expected**: End-to-end tests require nmem CLI in PATH. Unit tests mock CLI calls and should pass without nmem installed.
+**Checklist**:
+1. Ensure `genericagent_session_hook.install()` ran before frontend traffic starts.
+2. Confirm `agent.task_queue` has `_nmem_task_queue_proxy == True` and queued tasks have their `output` display queue wrapped before completion.
+3. Inspect `agent._nmem_last_session_save` or `agent._nmem_last_session_save_error` for save/readback diagnostics.
+4. Use manual/backfill tools only for historical logs; do not promote the legacy watcher as the primary path.
 
 ---
 
@@ -352,16 +344,13 @@ genericagent_nmem.install()  # Must be called before agentmain import
 
 ```
 nowledge-mem-genericagent-plugin/
-├── genericagent_nmem.py    # Core plugin (84 lines)
+├── genericagent_nmem.py    # Core plugin / working-memory injection
 ├── wrapper.py              # Standalone wrapper script
 ├── AGENTS.md               # Operating model documentation (236 lines)
 ├── README.md               # This file
 ├── pyproject.toml          # Package metadata
-├── tests/
-│   ├── test_cli.py         # CLI invocation tests (20 tests)
-│   ├── test_prompt.py      # Prompt building tests (20 tests)
-│   ├── test_install.py     # Monkey patching tests (16 tests)
-│   └── test_e2e_wrapper.py # End-to-end tests (5 tests)
+├── src/genericagent_session_hook.py  # task_queue/display_queue bridge for automatic session-save
+├── tests/                 # Unit/API tests including session-save hook acceptance
 └── htmlcov/                # Coverage report (generated)
 ```
 
@@ -369,9 +358,9 @@ nowledge-mem-genericagent-plugin/
 
 1. **Fork the repository**
 2. **Create a feature branch**: `git checkout -b feature/my-feature`
-3. **Write tests**: Maintain 100% coverage
-4. **Run tests**: `pytest tests/ -v --cov=genericagent_nmem`
-5. **Submit PR**: Include test results and coverage report
+3. **Write tests**: include acceptance evidence for any new capability claims
+4. **Run tests**: `pytest tests/ -v`
+5. **Submit PR**: link the issue and include test/readback evidence
 
 ---
 
@@ -382,15 +371,15 @@ nowledge-mem-genericagent-plugin/
 | Integration Method | Monkey Patch | Hooks | Hooks |
 | Source Code Modification | ❌ No | ✅ Yes | ✅ Yes |
 | Working Memory Injection | ✅ Auto | ✅ Auto | ✅ Auto |
-| Session Save | 🔧 Manual | ✅ Auto (Stop hook) | ✅ Auto |
+| Session Save | ✅ `task_queue`/display-queue automatic save; watcher fallback/backfill | ✅ Auto (Stop hook) | ✅ Auto |
 | MCP Support | ✅ Yes | ✅ Yes | ✅ Yes |
-| Test Coverage | 100% | N/A | N/A |
+| Test Evidence | API/helper tests plus task-queue bridge unit and real-GA physical simulation; live nmem telemetry pending | N/A | N/A |
 
 ---
 
 ## Roadmap
 
-- [ ] **Automatic Session Save**: Implement Stop hook equivalent without modifying source
+- [x] **Automatic Session Save**: Implement the GenericAgent task-queue/display-queue completion bridge and verify unit/API readback acceptance
 - [ ] **AutoRecall**: Proactive memory search based on task context
 - [ ] **Performance Optimization**: Cache working memory for repeated reads
 - [ ] **Configuration File**: Support `~/.config/genericagent-nmem/config.toml`
@@ -420,4 +409,4 @@ MIT License - See [LICENSE](../LICENSE) for details.
 
 ---
 
-**Status**: ✅ Production Ready | **Version**: 1.0.0 | **Last Updated**: 2026-05-20
+**Status**: ⚠️ Task-queue bridge implemented; live nmem telemetry pending | **Version**: 0.1.2 | **Last Updated**: 2026-05-20

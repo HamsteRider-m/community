@@ -23,6 +23,11 @@ from pathlib import Path
 
 import genericagent_nmem
 
+try:
+    from src import genericagent_session_hook
+except ImportError:  # pragma: no cover - direct script execution from plugin root
+    import genericagent_session_hook  # type: ignore
+
 
 def _check_nmem_ready() -> None:
     nmem = shutil.which("nmem")
@@ -166,6 +171,7 @@ def main() -> int:
 
     agentmain = _load_agentmain(ga_root)
     agent = agentmain.GenericAgent()
+    genericagent_session_hook.install(agent)
     agent.next_llm(args.llm_no)
     agent.verbose = args.verbose
     threading.Thread(target=agent.run, daemon=True).start()
